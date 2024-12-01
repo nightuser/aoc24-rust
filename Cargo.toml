@@ -1,0 +1,7 @@
+[workspace]
+members = ["day01"]
+resolver = "2"
+
+[workspace.dependencies]
+anyhow = "1.0.93"
+clap = { version = "4.5.21", features = ["derive"] }
