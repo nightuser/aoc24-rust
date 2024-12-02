@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -10,6 +9,7 @@ use std::str::FromStr;
 use anyhow::bail;
 use anyhow::Context;
 use clap::Parser;
+use itertools::Itertools;
 
 #[derive(Parser)]
 struct Cli {
@@ -48,11 +48,11 @@ fn run<P: AsRef<Path>>(input_path: P) -> anyhow::Result<()> {
     let ans1: i32 = zip(&xs, &ys).map(|(x, y)| (x - y).abs()).sum();
     println!("ans1 = {ans1}");
 
-    let mut counter: HashMap<i32, i32> = HashMap::with_capacity(xs.len());
-    for y in ys {
-        *counter.entry(y).or_insert(0) += 1;
-    }
-    let ans2: i32 = xs.iter().map(|x| x * counter.get(x).unwrap_or(&0)).sum();
+    let counts = ys.into_iter().counts();
+    let ans2: i32 = xs
+        .iter()
+        .map(|x| x * *counts.get(x).unwrap_or(&0) as i32)
+        .sum();
     println!("ans2 = {ans2}");
 
     Ok(())
