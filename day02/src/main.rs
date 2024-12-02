@@ -6,8 +6,8 @@ use std::str::FromStr;
 
 use clap::Parser;
 
-fn is_safe_distance(diff: i32) -> bool {
-    (1..=3).contains(&diff.abs())
+const fn is_safe_distance(diff: i32) -> bool {
+    matches!(diff.abs(), 1..=3)
 }
 
 /// `Diff` is a wrapper around the difference.
@@ -21,7 +21,7 @@ enum Diff {
 impl Diff {
     /// Two diffs are compatible if either one of them is a terminal or they have the same sign
     /// and have the same range.
-    fn is_compatible(&self, other: &Self) -> bool {
+    const fn is_compatible(&self, other: &Self) -> bool {
         if let (Self::Num(x), Self::Num(y)) = (self, other) {
             x.signum() == y.signum() && is_safe_distance(*x) && is_safe_distance(*y)
         } else {
@@ -29,22 +29,18 @@ impl Diff {
         }
     }
 
-    fn is_terminal(&self) -> bool {
-        matches!(self, Self::Terminal)
-    }
-
     /// Combines two diffs together. If one of the arguments is a terminal, then the result is
     /// also a terminal. Otherwise, we take the of sum the inner values.
-    fn combine(&self, other: &Self) -> Self {
+    const fn combine(&self, other: &Self) -> Self {
         if let (Self::Num(x), Self::Num(y)) = (self, other) {
-            Self::Num(x + y)
+            Self::Num(*x + *y)
         } else {
             Self::Terminal
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 enum Safety {
     Safe,
     AlmostSafe,
@@ -105,13 +101,14 @@ fn get_safety(report: &[i32]) -> Safety {
             for (prev, cur, safety) in branches {
                 if prev.is_compatible(&cur) {
                     // Corner case: we might need to drop the first element.
-                    if prev.is_terminal() && safety == Safety::Safe {
-                        new_branches.push((prev, next, Safety::AlmostSafe));
+                    if let (Safety::Safe, Diff::Terminal) = (&safety, prev) {
+                        new_branches.push((prev, next, Safety::AlmostSafe))
                     }
                     new_branches.push((cur, next, safety));
                 } else {
-                    if safety != Safety::Safe {
-                        continue;
+                    match safety {
+                        Safety::Safe => {}
+                        _ => continue,
                     }
                     let prev_cur = prev.combine(&cur);
                     if prev_cur.is_compatible(&next) {
@@ -133,7 +130,11 @@ fn get_safety(report: &[i32]) -> Safety {
 
     match branches {
         Some(branches) => {
-            if branches.into_iter().map(|b| b.2).any(|s| s == Safety::Safe) {
+            if branches
+                .into_iter()
+                .map(|b| b.2)
+                .any(|s| matches!(s, Safety::Safe))
+            {
                 Safety::Safe
             } else {
                 Safety::AlmostSafe
