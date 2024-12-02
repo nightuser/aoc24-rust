@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::iter::{self, Scan};
+use std::iter;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -40,7 +40,7 @@ impl Diff {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Safety {
     Safe,
     AlmostSafe,
@@ -52,43 +52,20 @@ struct Cli {
     input: PathBuf,
 }
 
-/// `1` comes from `foldl1`, `scanl1`, etc.
-trait Iterator1: Iterator {
-    /// Like `scan` but uses the first element as the initial state.
-    fn scan1<B, F>(mut self, f: F) -> Option<Scan<Self, Self::Item, F>>
-    where
-        Self: Sized,
-        F: FnMut(&mut Self::Item, Self::Item) -> Option<B>,
-    {
-        self.next().map(|init| self.scan(init, f))
-    }
-}
-
-impl<I> Iterator1 for I where I: Iterator + ?Sized {}
-
 fn get_safety(report: &[i32]) -> Safety {
-    if report.len() <= 1 {
-        return Safety::Safe;
-    }
-
-    // `diffs` is an iterator over consecutive differences, terminated by a `Diff::Terminal`.
-    // Safety: since the size of `report` is a least 1, unwrap is safe.
+    // `diffs` is an iterator over consecutive differences, terminated by a terminal.
     let mut diffs = report
-        .iter()
-        .scan1(|prev, cur| {
-            let diff = cur - *prev;
-            *prev = cur;
-            Some(Diff::Num(diff))
-        })
-        .unwrap()
+        .windows(2)
+        .map(|w| Diff::Num(w[1] - w[0]))
         .chain(iter::once(Diff::Terminal));
 
-    // Safety: since the size of `report` is a least 2, the size of `diffs` is at least 1, and
-    // thus unwrap is safe.
-    let first = diffs.next().unwrap();
+    // If `diffs` is empty, the size of `report` is less than 2 and it's always safe.
+    let first = match diffs.next() {
+        Some(first) => first,
+        None => return Safety::Safe,
+    };
 
     // We iterate throuth `diffs` with a window of length 3: (prev, cur, next).
-    // When we encounter
     let branches = diffs.try_fold(
         vec![(Diff::Terminal, first, Safety::Safe)],
         |branches, next| {
