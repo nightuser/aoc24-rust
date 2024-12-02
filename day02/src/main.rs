@@ -1,11 +1,10 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::iter;
+use std::iter::{self, Scan};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use clap::Parser;
-use itertools::Itertools;
 
 fn is_safe_distance(diff: i32) -> bool {
     (1..=3).contains(&diff.abs())
@@ -20,8 +19,8 @@ enum Diff {
 }
 
 impl Diff {
-    /// Two diffs are compatible if either one of them is a terminal or they have the same sign and
-    /// have the same range.
+    /// Two diffs are compatible if either one of them is a terminal or they have the same sign
+    /// and have the same range.
     fn is_compatible(&self, other: &Self) -> bool {
         if let (Self::Num(x), Self::Num(y)) = (self, other) {
             x.signum() == y.signum() && is_safe_distance(*x) && is_safe_distance(*y)
@@ -34,8 +33,8 @@ impl Diff {
         matches!(self, Self::Terminal)
     }
 
-    /// Combines two diffs together. If one of the arguments is a terminal, then the result is also
-    /// a terminal. Otherwise, we take the of sum the inner values.
+    /// Combines two diffs together. If one of the arguments is a terminal, then the result is
+    /// also a terminal. Otherwise, we take the of sum the inner values.
     fn combine(&self, other: &Self) -> Self {
         if let (Self::Num(x), Self::Num(y)) = (self, other) {
             Self::Num(x + y)
@@ -57,25 +56,39 @@ struct Cli {
     input: PathBuf,
 }
 
+/// `1` comes from `foldl1`, `scanl1`, etc.
+trait Iterator1: Iterator {
+    /// Like `scan` but uses the first element as the initial state.
+    fn scan1<B, F>(mut self, f: F) -> Option<Scan<Self, Self::Item, F>>
+    where
+        Self: Sized,
+        F: FnMut(&mut Self::Item, Self::Item) -> Option<B>,
+    {
+        self.next().map(|init| self.scan(init, f))
+    }
+}
+
+impl<I> Iterator1 for I where I: Iterator + ?Sized {}
+
 fn get_safety(report: &[i32]) -> Safety {
     if report.len() <= 1 {
         return Safety::Safe;
     }
 
+    // `diffs` is an iterator over consecutive differences, terminated by a `Diff::Terminal`.
     // Safety: since the size of `report` is a least 1, unwrap is safe.
-    let mut iter = report.iter();
-    let first = iter.next().unwrap();
-    let mut diffs = iter
-        .scan(first, |prev, cur| {
+    let mut diffs = report
+        .iter()
+        .scan1(|prev, cur| {
             let diff = cur - *prev;
             *prev = cur;
-            Some(diff)
+            Some(Diff::Num(diff))
         })
-        .map(Diff::Num)
+        .unwrap()
         .chain(iter::once(Diff::Terminal));
 
-    // Safety: since the size of `report` is a least 2, the size of `diffs` is at least 1, and thus
-    // unwrap is safe.
+    // Safety: since the size of `report` is a least 2, the size of `diffs` is at least 1, and
+    // thus unwrap is safe.
     let first = diffs.next().unwrap();
 
     // We iterate throuth `diffs` with a window of length 3: (prev, cur, next).
@@ -120,7 +133,7 @@ fn get_safety(report: &[i32]) -> Safety {
 
     match branches {
         Some(branches) => {
-            if branches.into_iter().map(|x| x.2).contains(&Safety::Safe) {
+            if branches.into_iter().map(|b| b.2).any(|s| s == Safety::Safe) {
                 Safety::Safe
             } else {
                 Safety::AlmostSafe
