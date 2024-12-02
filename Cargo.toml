@@ -1,5 +1,5 @@
 [workspace]
-members = ["day01"]
+members = ["day01", "day02"]
 resolver = "2"
 
 [workspace.package]
@@ -8,3 +8,4 @@ license = "MIT"
 [workspace.dependencies]
 anyhow = "1.0.93"
 clap = { version = "4.5.21", features = ["derive"] }
+itertools = "0.13.0"
