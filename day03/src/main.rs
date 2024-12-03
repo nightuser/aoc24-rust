@@ -9,8 +9,8 @@ fn main() -> anyhow::Result<()> {
         .nth(1)
         .ok_or(anyhow!("valid input argument"))?;
     let contents = fs::read_to_string(input)?;
-    let cmd_re =
-        Regex::new(r"mul\((?<lhs>\d+),(?<rhs>\d+)\)|do(?<neg>|n't)\(\)").expect("valid regex");
+    let cmd_re = Regex::new(r"mul\((?<lhs>\d{1,3}),(?<rhs>\d{1,3})\)|do(?<neg>|n't)\(\)")
+        .expect("valid regex");
     let mut ans1 = 0;
     let mut ans2 = 0;
     let mut active = true;
