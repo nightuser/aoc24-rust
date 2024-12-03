@@ -10,24 +10,21 @@ fn main() -> anyhow::Result<()> {
         .ok_or(anyhow!("valid input argument"))?;
     let contents = fs::read_to_string(input)?;
     let cmd_re =
-        Regex::new(r"(?<cmd>mul|do|don't)\((?:(?<lhs>\d+),(?<rhs>\d+))?\)").expect("valid regex");
+        Regex::new(r"mul\((?<lhs>\d+),(?<rhs>\d+)\)|do(?<neg>|n't)\(\)").expect("valid regex");
     let mut ans1 = 0;
     let mut ans2 = 0;
     let mut active = true;
     for c in cmd_re.captures_iter(&contents) {
-        match &c["cmd"] {
-            "mul" => {
-                let lhs = c["lhs"].parse::<i32>()?;
-                let rhs = c["rhs"].parse::<i32>()?;
-                let output = lhs * rhs;
-                ans1 += output;
-                if active {
-                    ans2 += output;
-                }
+        if c[0].starts_with("mul") {
+            let lhs = c["lhs"].parse::<i32>()?;
+            let rhs = c["rhs"].parse::<i32>()?;
+            let output = lhs * rhs;
+            ans1 += output;
+            if active {
+                ans2 += output;
             }
-            "do" => active = true,
-            "don't" => active = false,
-            _ => unreachable!(),
+        } else {
+            active = c["neg"].is_empty()
         }
     }
     println!("ans1 = {ans1}");
