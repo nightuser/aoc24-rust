@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
@@ -6,7 +8,7 @@ use std::iter;
 
 type Point = (usize, usize);
 type Position = (Point, Dir);
-type Obstructions = HashSet<Point>;
+type Obstructions<'a> = Vec<Cow<'a, [usize]>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Dir {
@@ -27,29 +29,108 @@ impl Dir {
     }
 }
 
+fn lower_bound<'a, T: Ord>(haystack: &'a [T], needle: &'a T) -> Option<&'a T> {
+    let index = haystack
+        .binary_search_by(|x| match x.cmp(needle) {
+            Ordering::Equal => Ordering::Greater,
+            ord => ord,
+        })
+        .unwrap_err();
+    if index == 0 {
+        None
+    } else {
+        Some(&haystack[index - 1])
+    }
+}
+
+fn upper_bound<'a, T: Ord>(haystack: &'a [T], needle: &'a T) -> Option<&'a T> {
+    let index = haystack
+        .binary_search_by(|x| match x.cmp(needle) {
+            Ordering::Equal => Ordering::Less,
+            ord => ord,
+        })
+        .unwrap_err();
+    if index == haystack.len() {
+        None
+    } else {
+        Some(&haystack[index])
+    }
+}
+
+struct Path<'a> {
+    grid: &'a Grid<'a>,
+    current_pos: Option<Position>,
+}
+
+impl Iterator for Path<'_> {
+    type Item = (Position, Option<Point>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let pos = self.current_pos?;
+        let ((x, y), dir) = pos;
+        let next_point = match dir {
+            Dir::Up => (x, y.wrapping_sub(1)),
+            Dir::Right => (x.wrapping_add(1), y),
+            Dir::Down => (x, y.wrapping_add(1)),
+            Dir::Left => (x.wrapping_sub(1), y),
+        };
+        let next = if !self.grid.is_in_bounds(next_point) {
+            self.current_pos = None;
+            None
+        } else if self.grid.is_obstruction(next_point) {
+            self.current_pos = Some(((x, y), dir.turn_right()));
+            None
+        } else {
+            self.current_pos = Some((next_point, dir));
+            Some(next_point)
+        };
+        Some((pos, next))
+    }
+}
+
 struct Grid<'a> {
     width: usize,
     height: usize,
-    obstructions: Obstructions,
-    parent: Option<&'a Grid<'a>>,
+    vert_obstructions: Obstructions<'a>,
+    hor_obstructions: Obstructions<'a>,
 }
 
 impl<'a> Grid<'a> {
-    pub fn new<T: Into<Obstructions>>(width: usize, height: usize, obstructions: T) -> Self {
+    pub fn new<T: IntoIterator<Item = Point>>(
+        width: usize,
+        height: usize,
+        obstructions: T,
+    ) -> Self {
+        let mut vert_obstructions: Obstructions<'a> = vec![Cow::default(); width];
+        let mut hor_obstructions: Obstructions<'a> = vec![Cow::default(); height];
+        for (x, y) in obstructions {
+            vert_obstructions[x].to_mut().push(y);
+            hor_obstructions[y].to_mut().push(x);
+        }
+        vert_obstructions.iter_mut().for_each(|v| v.to_mut().sort());
+        hor_obstructions.iter_mut().for_each(|v| v.to_mut().sort());
         Grid {
             width,
             height,
-            obstructions: obstructions.into(),
-            parent: None,
+            vert_obstructions,
+            hor_obstructions,
         }
     }
 
-    pub fn with_parent<T: Into<Obstructions>>(parent: &'a Grid, obstructions: T) -> Self {
+    pub fn with_parent(parent: &'a Grid, (x, y): Point) -> Self {
+        let mut vert_obstructions = parent.vert_obstructions.clone();
+        let mut hor_obstructions = parent.hor_obstructions.clone();
+        if let Err(pos) = vert_obstructions[x].binary_search(&y) {
+            vert_obstructions[x].to_mut().insert(pos, y);
+        }
+        if let Err(pos) = hor_obstructions[y].binary_search(&x) {
+            hor_obstructions[y].to_mut().insert(pos, x);
+        }
         Grid {
             width: parent.width,
             height: parent.height,
-            obstructions: obstructions.into(),
-            parent: Some(parent),
+            vert_obstructions,
+            hor_obstructions,
         }
     }
 
@@ -57,36 +138,36 @@ impl<'a> Grid<'a> {
         (0..self.width).contains(&x) && (0..self.height).contains(&y)
     }
 
-    pub fn is_obstruction(&self, point: Point) -> bool {
-        self.obstructions.contains(&point)
-            || self
-                .parent
-                .is_some_and(|parent| parent.obstructions.contains(&point))
+    pub fn is_obstruction(&self, (x, y): Point) -> bool {
+        self.vert_obstructions[x].binary_search(&y).is_ok()
     }
 
-    // Step can be implemented using binary search via jumping to the next obstacle
-    pub fn step(&self, ((x, y), dir): Position) -> Point {
-        let (dx, dy) = match dir {
-            Dir::Up => (0, -1),
-            Dir::Right => (1, 0),
-            Dir::Down => (0, 1),
-            Dir::Left => (-1, 0),
-        };
-        (x.wrapping_add_signed(dx), y.wrapping_add_signed(dy))
+    pub fn path(&self, init_pos: Position) -> Path<'_> {
+        Path {
+            grid: self,
+            current_pos: Some(init_pos),
+        }
     }
 
-    pub fn path(&self, init_pos: Position) -> impl Iterator<Item = (Point, Dir)> + use<'_> {
-        iter::successors(Some(init_pos), |&pos| {
-            let (current, dir) = pos;
-            let next = self.step(pos);
-            if !self.is_in_bounds(next) {
-                None
-            } else if self.is_obstruction(next) {
-                Some((current, dir.turn_right()))
-            } else {
-                Some((next, dir))
-            }
+    pub fn stops(&self, init_pos: Position) -> impl Iterator<Item = Position> + use<'_> {
+        iter::successors(Some(init_pos), |&((x, y), dir)| {
+            let next = match dir {
+                Dir::Up => {
+                    lower_bound(self.vert_obstructions[x].as_ref(), &y).map(|&o_y| (x, o_y + 1))
+                }
+                Dir::Right => {
+                    upper_bound(self.hor_obstructions[y].as_ref(), &x).map(|&o_x| (o_x - 1, y))
+                }
+                Dir::Down => {
+                    upper_bound(self.vert_obstructions[x].as_ref(), &y).map(|&o_y| (x, o_y - 1))
+                }
+                Dir::Left => {
+                    lower_bound(self.hor_obstructions[y].as_ref(), &x).map(|&o_x| (o_x + 1, y))
+                }
+            };
+            next.map(|next| (next, dir.turn_right()))
         })
+        .skip(1) // Skip initial position.
     }
 }
 
@@ -94,7 +175,7 @@ fn main() {
     let input = env::args_os().nth(1).unwrap();
     let reader = BufReader::new(File::open(input).unwrap());
     let mut start = None;
-    let mut obstructions: HashSet<Point> = HashSet::new();
+    let mut obstructions: Vec<Point> = Vec::new();
     let mut x = 0;
     let mut y = 0;
     for line in reader.lines() {
@@ -104,7 +185,7 @@ fn main() {
             match c {
                 '^' => start = Some((x, y)),
                 '#' => {
-                    obstructions.insert((x, y));
+                    obstructions.push((x, y));
                 }
                 _ => {}
             }
@@ -119,18 +200,19 @@ fn main() {
     let mut is_loop: HashMap<Point, bool> = HashMap::new();
     let mut visited: HashSet<Position> = HashSet::new();
     let mut tmp_visited: HashSet<Position> = HashSet::new();
-
-    for pos in grid.path((start, Dir::Up)) {
+    for (pos, next) in grid.path((start, Dir::Up)) {
         path_points.insert(pos.0);
         visited.insert(pos);
 
-        let next = grid.step(pos);
-        if grid.is_obstruction(next) || next == start || is_loop.contains_key(&next) {
+        let Some(next) = next else {
+            continue;
+        };
+        if next == start || is_loop.contains_key(&next) {
             continue;
         }
+        let new_grid = Grid::with_parent(&grid, next);
         let mut found = false;
-        let new_grid = Grid::with_parent(&grid, [next]);
-        for new_pos in new_grid.path(pos).skip(1) {
+        for new_pos in new_grid.stops(pos) {
             if visited.contains(&new_pos) || tmp_visited.contains(&new_pos) {
                 found = true;
                 break;
@@ -140,8 +222,12 @@ fn main() {
         tmp_visited.clear();
         is_loop.insert(next, found);
     }
+
     let ans1 = path_points.len();
     let ans2 = is_loop.into_values().filter(|b| *b).count();
     println!("ans1 = {ans1}");
     println!("ans2 = {ans2}");
 }
+
+#[cfg(test)]
+mod tests;
