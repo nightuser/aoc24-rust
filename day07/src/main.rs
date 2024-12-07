@@ -6,15 +6,6 @@ use std::mem;
 use itertools::Itertools;
 use rustc_hash::FxHashSet;
 
-fn combine_numbers(mut lhs: i64, rhs: i64) -> i64 {
-    let mut tmp = rhs;
-    while tmp > 0 {
-        lhs *= 10;
-        tmp /= 10;
-    }
-    lhs + rhs
-}
-
 fn main() {
     let input = env::args_os().nth(1).unwrap();
     let reader = BufReader::new(File::open(input).unwrap());
@@ -25,30 +16,35 @@ fn main() {
     for line in reader.lines() {
         let line = line.unwrap();
         let (target, xs) = line.splitn(2, ": ").collect_tuple().unwrap();
-        let target = target.parse().unwrap();
-        let mut xs = xs.split_whitespace().map(|s| s.parse().unwrap());
+        let target: i64 = target.parse().unwrap();
+        let xs = xs.split_whitespace().map(|s| s.parse().unwrap()).rev();
 
-        let first = xs.next().unwrap();
-        states.insert((first, true));
+        states.insert((target, true));
 
         for x in xs {
+            let mut e = 1;
+            let mut tmp = x;
+            while tmp != 0 {
+                tmp /= 10;
+                e *= 10;
+            }
             for (state, state_simple) in states.drain() {
-                for (y, y_simple) in [
-                    (state + x, true),
-                    (state * x, true),
-                    (combine_numbers(state, x), false),
-                ] {
-                    if y <= target {
-                        new_states.insert((y, state_simple && y_simple));
-                    }
+                if state % x == 0 {
+                    new_states.insert((state / x, state_simple));
+                }
+                if state >= x {
+                    new_states.insert((state - x, state_simple));
+                }
+                if state % e == x {
+                    new_states.insert((state / e, false));
                 }
             }
             mem::swap(&mut states, &mut new_states);
         }
-        if states.contains(&(target, true)) {
+        if states.contains(&(0, true)) {
             ans1 += target;
             ans2 += target;
-        } else if states.contains(&(target, false)) {
+        } else if states.contains(&(0, false)) {
             ans2 += target;
         }
         states.clear();
