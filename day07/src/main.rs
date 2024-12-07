@@ -1,9 +1,10 @@
-use std::collections::HashSet;
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::mem;
 
 use itertools::Itertools;
+use rustc_hash::FxHashSet;
 
 fn combine_numbers(mut lhs: i64, rhs: i64) -> i64 {
     let mut tmp = rhs;
@@ -14,51 +15,43 @@ fn combine_numbers(mut lhs: i64, rhs: i64) -> i64 {
     lhs + rhs
 }
 
-fn process(target: i64, xs: Vec<i64>) -> (bool, bool) {
-    let mut iter = xs.into_iter();
-    let first = iter.next().unwrap();
-    let mut states1 = HashSet::from([first]);
-    let mut states2 = HashSet::from([first]);
-    for x in iter {
-        let mut new_states1: HashSet<i64> = HashSet::new();
-        let mut new_states2: HashSet<i64> = HashSet::new();
-        for state in states1 {
-            for y in [state + x, state * x] {
-                if y <= target {
-                    new_states1.insert(y);
-                }
-            }
-        }
-        for state in states2 {
-            for y in [state + x, state * x, combine_numbers(state, x)] {
-                if y <= target {
-                    new_states2.insert(y);
-                }
-            }
-        }
-        states1 = new_states1;
-        states2 = new_states2;
-    }
-    (states1.contains(&target), states2.contains(&target))
-}
-
 fn main() {
     let input = env::args_os().nth(1).unwrap();
     let reader = BufReader::new(File::open(input).unwrap());
     let mut ans1 = 0;
     let mut ans2 = 0;
+    let mut states = FxHashSet::default();
+    let mut new_states = FxHashSet::default();
     for line in reader.lines() {
         let line = line.unwrap();
         let (target, xs) = line.splitn(2, ": ").collect_tuple().unwrap();
-        let target: i64 = target.parse().unwrap();
-        let xs: Vec<i64> = xs.split_whitespace().map(|s| s.parse().unwrap()).collect();
-        let (valid1, valid2) = process(target, xs);
-        if valid1 {
-            ans1 += target;
+        let target = target.parse().unwrap();
+        let mut xs = xs.split_whitespace().map(|s| s.parse().unwrap());
+
+        let first = xs.next().unwrap();
+        states.insert((first, true));
+
+        for x in xs {
+            for (state, state_simple) in states.drain() {
+                for (y, y_simple) in [
+                    (state + x, true),
+                    (state * x, true),
+                    (combine_numbers(state, x), false),
+                ] {
+                    if y <= target {
+                        new_states.insert((y, state_simple && y_simple));
+                    }
+                }
+            }
+            mem::swap(&mut states, &mut new_states);
         }
-        if valid2 {
+        if states.contains(&(target, true)) {
+            ans1 += target;
+            ans2 += target;
+        } else if states.contains(&(target, false)) {
             ans2 += target;
         }
+        states.clear();
     }
     println!("ans1 = {ans1}");
     println!("ans1 = {ans2}");
