@@ -1,0 +1,9 @@
+[package]
+name = "day08"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+rustc-hash.workspace = true
+itertools.workspace = true
