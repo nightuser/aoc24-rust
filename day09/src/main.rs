@@ -1,129 +1,111 @@
-use std::collections::LinkedList;
-use std::collections::VecDeque;
 use std::env;
 use std::fs;
 
-use itertools::Itertools;
-
-type BlockData = (i64, i64);
-
-#[derive(Debug, Clone, Copy)]
-enum Block {
-    File(BlockData),
-    Empty(i64),
-}
-
 fn main() {
     let input = env::args_os().nth(1).unwrap();
-    let mut contents = fs::read_to_string(input).unwrap();
-    contents.truncate(contents.trim_end().len());
-    let mut files: Vec<(i64, i64)> = Vec::new();
-    let mut empties: Vec<i64> = Vec::new();
-    for (id, mut chunk) in contents
+    let contents = fs::read_to_string(input).unwrap();
+    let sizes: Vec<usize> = contents
         .chars()
-        .map(|c| c.to_digit(10).unwrap() as i64)
-        .chunks(2)
-        .into_iter()
-        .enumerate()
-    {
-        let size = chunk.next().unwrap();
-        files.push((id as i64, size));
-        let empty_size = chunk.next().unwrap_or(0);
-        empties.push(empty_size);
-    }
-    let mut blocks1: VecDeque<(BlockData, i64)> =
-        files.clone().into_iter().zip(empties.clone()).collect();
-    let mut new_blocks: Vec<BlockData> = Vec::new();
-    while let Some(((id, size), mut empty_size)) = blocks1.pop_front() {
-        new_blocks.push((id, size));
-        while empty_size > 0 {
-            let Some(((last_id, last_size), _)) = blocks1.back_mut() else {
-                break;
-            };
-            let fragment = empty_size.min(*last_size);
-            empty_size -= fragment;
-            *last_size -= fragment;
-            new_blocks.push((*last_id, fragment));
-            if *last_size == 0 {
-                blocks1.pop_back();
-            }
+        .filter_map(|c| c.to_digit(10).map(|d| d as usize))
+        .collect();
+    let mut id = 0;
+    let mut offset = 0;
+    let mut memory: Vec<i32> = vec![-1; sizes.iter().cloned().sum()];
+    let mut empties: Vec<(usize, usize)> = Vec::with_capacity(sizes.len() / 2);
+    let mut files: Vec<(usize, usize)> = Vec::with_capacity((sizes.len() + 1) / 2);
+    for (&size, is_file) in sizes.iter().zip([true, false].into_iter().cycle()) {
+        if size == 0 {
+            continue;
         }
-    }
-    let mut pos = 0;
-    let mut ans1 = 0;
-    for (id, size) in new_blocks {
-        ans1 += id * (2 * pos + (size - 1)) * size / 2;
-        pos += size;
-    }
-    println!("ans1 = {ans1}");
-
-    let mut blocks2: LinkedList<Block> = LinkedList::new();
-    for ((id, size), empty_size) in files.into_iter().zip(empties.into_iter()) {
-        blocks2.push_back(Block::File((id, size)));
-        if empty_size > 0 {
-            blocks2.push_back(Block::Empty(empty_size));
+        if is_file {
+            files.push((offset, size));
+            memory[offset..offset + size].fill(id);
+            id += 1;
+        } else {
+            empties.push((offset, size));
         }
+        offset += size;
     }
+    empties.reverse();
 
-    let mut tail: LinkedList<Block> = LinkedList::new();
-    let mut last_file: Option<BlockData> = None;
+    let mut memory1 = memory.clone();
+    let mut empties1 = empties.clone();
+    let mut files1 = files.clone();
+
     loop {
-        let mut found = false;
-        while let Some(last) = blocks2.pop_back() {
-            match last {
-                Block::File(data @ (id, _)) if last_file.is_none_or(|(lid, _)| id < lid) => {
-                    last_file = Some(data);
-                    found = true;
-                    break;
-                }
-                _ => {}
-            }
-            tail.push_front(last);
-        }
-        if !found {
+        let Some((file_offset, file_size)) = files1.last_mut() else {
+            break;
+        };
+        let Some((empty_offset, empty_size)) = empties1.last_mut() else {
+            break;
+        };
+        if empty_offset > file_offset {
             break;
         }
-        let last_file = last_file.unwrap();
+        let fragment = *file_size.min(empty_size);
+        for i in 0..fragment {
+            memory1.swap(*empty_offset + i, *file_offset + *file_size - fragment + i);
+        }
+        *file_size -= fragment;
+        *empty_offset += fragment;
+        *empty_size -= fragment;
+        if *file_size == 0 {
+            files1.pop();
+        }
+        if *empty_size == 0 {
+            empties1.pop();
+        }
+    }
 
-        let mut head: LinkedList<Block> = LinkedList::new();
-        let mut available: Option<i64> = None;
-        while let Some(first) = blocks2.pop_front() {
-            match first {
-                Block::Empty(empty_size) if empty_size >= last_file.1 => {
-                    available = Some(empty_size);
-                    break;
-                }
-                _ => {}
-            }
-            head.push_back(first);
+    let ans1: usize = memory1
+        .iter()
+        .take_while(|&&id| id != -1)
+        .enumerate()
+        .map(|(pos, &id)| (id as usize) * pos)
+        .sum();
+    println!("ans1 = {ans1}");
+
+    let mut memory2 = memory.clone();
+    let mut empties2 = empties.clone();
+    let mut files2 = files.clone();
+
+    loop {
+        let Some((file_offset, file_size)) = files2.last_mut() else {
+            break;
+        };
+        let Some((empty_offset, empty_size)) = empties2
+            .iter_mut()
+            .rev()
+            .take_while(|block| block.0 < *file_offset)
+            .find(|block| block.1 >= *file_size)
+        else {
+            files2.pop();
+            continue;
+        };
+        let fragment = *file_size.min(empty_size);
+        for i in 0..fragment {
+            memory2.swap(*empty_offset + i, *file_offset + *file_size - fragment + i);
         }
-        match available {
-            Some(available) => {
-                head.push_back(Block::File(last_file));
-                let leftover = available - last_file.1;
-                if leftover > 0 {
-                    head.push_back(Block::Empty(leftover));
-                }
-                tail.push_front(Block::Empty(last_file.1));
-            }
-            None => {
-                assert!(blocks2.is_empty());
-                tail.push_front(Block::File(last_file));
+        *file_size -= fragment;
+        *empty_offset += fragment;
+        *empty_size -= fragment;
+        if *file_size == 0 {
+            files2.pop();
+        }
+        while let Some((_, empty_size)) = empties2.last() {
+            if *empty_size == 0 {
+                empties2.pop();
+            } else {
+                break;
             }
         }
-        head.append(&mut blocks2);
-        blocks2 = head;
     }
-    let mut pos = 0;
-    let mut ans2 = 0;
-    for block in tail {
-        match block {
-            Block::File((id, size)) => {
-                ans2 += id * (2 * pos + (size - 1)) * size / 2;
-                pos += size;
-            }
-            Block::Empty(empty_size) => pos += empty_size,
-        }
-    }
+
+    let ans2: usize = memory2
+        .iter()
+        .enumerate()
+        .filter(|(_, &id)| id != -1)
+        .map(|(pos, &id)| (id as usize) * pos)
+        .sum();
     println!("ans2 = {ans2}");
 }
