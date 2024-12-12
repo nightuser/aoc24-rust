@@ -1,16 +1,17 @@
+use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::{env, iter};
+use std::iter;
 
+use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
-use rustc_hash::{FxHashMap, FxHashSet};
 
 type Point = (i32, i32);
 
 struct Grid {
     width: i32,
     height: i32,
-    antennas: FxHashMap<char, Vec<Point>>,
+    antennas: HashMap<char, Vec<Point>>,
 }
 
 impl Grid {
@@ -19,7 +20,7 @@ impl Grid {
         height: i32,
         antenna_positions: T,
     ) -> Self {
-        let mut antennas: FxHashMap<char, Vec<Point>> = FxHashMap::default();
+        let mut antennas: HashMap<char, Vec<Point>> = HashMap::new();
         for (c, point) in antenna_positions {
             antennas.entry(c).or_default().push(point);
         }
@@ -42,8 +43,8 @@ impl Grid {
     }
 
     pub fn antinodes(&self) -> (usize, usize) {
-        let mut antinodes1: FxHashSet<Point> = FxHashSet::default();
-        let mut antinodes2: FxHashSet<Point> = FxHashSet::default();
+        let mut antinodes1: HashSet<Point> = HashSet::new();
+        let mut antinodes2: HashSet<Point> = HashSet::new();
         for positions in self.antennas.values() {
             for (&(x1, y1), &(x2, y2)) in positions.iter().tuple_combinations() {
                 let (dx, dy) = (x2 - x1, y2 - y1);

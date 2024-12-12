@@ -1,9 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::{env, iter};
+use std::iter;
 
 use anyhow::anyhow;
+use hashbrown::{HashMap, HashSet};
 
 type Point = (usize, usize);
 type PointShift = (isize, isize);

@@ -3,16 +3,16 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::mem;
 
+use hashbrown::HashSet;
 use itertools::Itertools;
-use rustc_hash::FxHashSet;
 
 fn main() {
     let input = env::args_os().nth(1).unwrap();
     let reader = BufReader::new(File::open(input).unwrap());
     let mut ans1 = 0;
     let mut ans2 = 0;
-    let mut states = FxHashSet::default();
-    let mut new_states = FxHashSet::default();
+    let mut states = HashSet::new();
+    let mut new_states = HashSet::new();
     for line in reader.lines() {
         let line = line.unwrap();
         let (target, xs) = line.splitn(2, ": ").collect_tuple().unwrap();

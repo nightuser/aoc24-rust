@@ -10,4 +10,3 @@ anyhow = "1.0.93"
 clap = { version = "4.5.21", features = ["derive"] }
 itertools = "0.13.0"
 hashbrown = "0.15.2"
-rustc-hash = "2.1.0"

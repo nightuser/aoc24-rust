@@ -6,4 +6,4 @@ license.workspace = true
 
 [dependencies]
 itertools.workspace = true
-rustc-hash.workspace = true
+hashbrown.workspace = true
