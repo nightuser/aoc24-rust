@@ -26,6 +26,17 @@ fn main() {
 
         let det = a_x * b_y - b_x * a_y;
         if det == 0 {
+            // Requires some proper minimization for cases like:
+            //
+            // ```text
+            // Button A: X+2, Y+0
+            // Button B: X+3, Y+0
+            // Prize: X=11, Y=0
+            //
+            // Button A: X+3, Y+0
+            // Button B: X+2, Y+0
+            // Prize: X=11, Y=0
+            // ```
             panic!("Not present in the input");
         }
         for (t_x, t_y, ans) in [
@@ -34,9 +45,15 @@ fn main() {
         ] {
             let det1 = t_x * b_y - b_x * t_y;
             let det2 = a_x * t_y - t_x * a_y;
-            if det1 % det == 0 && det2 % det == 0 {
-                *ans += 3 * (det1 / det) + (det2 / det);
+            if det1 % det != 0 || det2 % det != 0 {
+                continue;
             }
+            let a_presses = det1 / det;
+            let b_presses = det2 / det;
+            if a_presses < 0 || b_presses < 0 {
+                continue;
+            }
+            *ans += 3 * a_presses + b_presses;
         }
 
         if lines.next().is_none() {
