@@ -4,6 +4,7 @@ use std::collections::{BinaryHeap, VecDeque};
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::mem;
 
 use arrayvec::ArrayVec;
 
@@ -16,12 +17,17 @@ fn main() {
     let mut start: Option<usize> = None;
     let mut end: Option<usize> = None;
     let mut neighbors: Vec<Neighbors> = Vec::new();
-    let mut walls: Vec<bool> = Vec::new(); // Only need the last two rows.
+    let mut prev_walls: Vec<bool> = Vec::new();
+    let mut walls: Vec<bool> = Vec::new();
     let mut index = 0;
     for line in reader.lines() {
         let line = line.unwrap();
         let width = line.len();
-        for c in line.chars() {
+        if prev_walls.is_empty() {
+            prev_walls.resize(width, true);
+            walls.reserve_exact(width);
+        }
+        for (x, (c, is_wall_above)) in line.chars().zip(prev_walls.drain(..)).enumerate() {
             let is_wall = c == '#';
             walls.push(is_wall);
             if c == 'S' {
@@ -40,15 +46,20 @@ fn main() {
                 neighbors.push(node_neighbors);
             }
             if !is_wall {
-                for (potential_neighbor, dir) in [(index - 4, 0), (index - 4 * width, 1)] {
-                    if !walls[(potential_neighbor + dir) / 4] {
-                        neighbors[index + dir].push((1, potential_neighbor + dir));
-                        neighbors[potential_neighbor + dir + 2].push((1, index + dir + 2));
-                    }
+                let left = index - 4;
+                if !walls[x - 1] {
+                    neighbors[index].push((1, left));
+                    neighbors[left + 2].push((1, index + 2));
+                }
+                let above = index + 1 - 4 * width;
+                if !is_wall_above {
+                    neighbors[index + 1].push((1, above));
+                    neighbors[above + 2].push((1, index + 3));
                 }
             }
             index += 4;
         }
+        mem::swap(&mut walls, &mut prev_walls);
     }
     let start = start.unwrap();
     let end = end.unwrap();
