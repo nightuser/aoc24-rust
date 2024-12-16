@@ -64,19 +64,14 @@ fn main() {
     let start = start.unwrap();
     let end = end.unwrap();
 
-    let start_east = 4 * start + 2;
+    let start_index = 4 * start + 2;
     let mut dist = vec![i32::MAX; neighbors.len()];
-    dist[start_east] = 0;
+    dist[start_index] = 0;
     let mut visited = vec![false; neighbors.len()];
     let mut queue: BinaryHeap<Reverse<(i32, usize)>> = BinaryHeap::new();
-    queue.push(Reverse((0, start_east)));
+    queue.push(Reverse((0, start_index)));
     let mut prev: Vec<Predecessors> = vec![Predecessors::new(); neighbors.len()];
-    let mut end_index: Option<usize> = None;
     while let Some(Reverse((_prio, index))) = queue.pop() {
-        if index / 4 == end {
-            end_index = Some(index);
-            break;
-        }
         if visited[index] {
             continue;
         }
@@ -97,13 +92,30 @@ fn main() {
             }
         }
     }
-    let end_index = end_index.unwrap();
-    let ans1 = dist[end_index];
+
+    let mut end_indices: ArrayVec<usize, 4> = ArrayVec::new();
+    let mut ans1 = i32::MAX;
+    for dir in 0..4 {
+        let end_index = 4 * end + dir;
+        match ans1.cmp(&dist[end_index]) {
+            Greater => {
+                ans1 = dist[end_index];
+                end_indices.clear();
+                end_indices.push(end_index);
+            }
+            Equal => {
+                end_indices.push(end_index);
+            }
+            _ => {}
+        }
+    }
 
     let mut prev_queue: VecDeque<usize> = VecDeque::new();
     visited.fill(false);
-    prev_queue.push_back(end_index);
-    visited[end_index] = true;
+    for end_index in end_indices {
+        prev_queue.push_back(end_index);
+        visited[end_index] = true;
+    }
     while let Some(index) = prev_queue.pop_front() {
         for &neighbor in prev[index].iter() {
             if !visited[neighbor] {
