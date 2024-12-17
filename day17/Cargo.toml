@@ -1,0 +1,10 @@
+[package]
+name = "day17"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+hashbrown.workspace = true
+itertools.workspace = true
+strum = { version = "0.26", features = ["derive"] }
