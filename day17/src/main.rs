@@ -312,6 +312,7 @@ fn main() {
         }
         mem::swap(&mut a_values, &mut new_a_values);
     }
-    let ans2 = a_values.iter().min().unwrap();
+    let ans2 = *a_values.iter().min().unwrap();
+    assert_eq!(machine.run1([ans2, 0, 0]), code);
     println!("ans1 = {ans2}");
 }
