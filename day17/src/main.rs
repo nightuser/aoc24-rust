@@ -24,17 +24,13 @@ enum Instr {
 
 #[derive(Debug, Clone)]
 enum Expr {
-    Literal(u8),
-    RegA,
-    RegB,
-    RegC,
-    Div(Box<Expr>, Box<Expr>),
+    Literal(Word),
+    RegA(Word, Word),
     Mod8(Box<Expr>),
+    XorLit(Box<Expr>, Word),
+    Div(Box<Expr>, Box<Expr>),
     Xor(Box<Expr>, Box<Expr>),
-    XorLit(Box<Expr>, u8),
-    // The following two types are for intermediate values
-    Intermediate(Word),
-    RegABits(Word, Word),
+    Uknown,
 }
 
 #[derive(Debug, Clone)]
@@ -109,9 +105,9 @@ impl Machine {
             constraints: Vec::new(),
             out: Vec::new(),
             ip: 0,
-            reg_a: Expr::RegA,
-            reg_b: Expr::RegB,
-            reg_c: Expr::RegC,
+            reg_a: Expr::RegA(0, Word::BITS.into()),
+            reg_b: Expr::Uknown,
+            reg_c: Expr::Uknown,
         }];
         let mut new_states: Vec<State> = Vec::new();
 
@@ -128,7 +124,7 @@ impl Machine {
                     continue;
                 }
                 let instr = Instr::from_repr(self.code[state.ip]).unwrap();
-                let literal = self.code[state.ip + 1];
+                let literal = self.code[state.ip + 1].into();
                 let combo = if literal & 4 == 0 {
                     Expr::Literal(literal)
                 } else {
@@ -190,76 +186,55 @@ fn extract_value(line: &str) -> &str {
     line.rsplit_once(' ').unwrap().1
 }
 
-fn simplify(expr: Expr) -> Expr {
+fn simplify(expr: &Expr) -> Expr {
     match expr {
-        Expr::Literal(literal) => Expr::Intermediate(literal.into()),
-        Expr::RegA => Expr::RegABits(0, 64),
-        Expr::RegB => panic!("unexpected"),
-        Expr::RegC => panic!("unexpected"),
-        Expr::Div(lhs, rhs) => {
-            let lhs_simpl = simplify(*lhs);
-            let rhs_simpl = simplify(*rhs);
-            match (lhs_simpl, rhs_simpl) {
-                (Expr::Intermediate(lhs_value), Expr::Intermediate(rhs_value)) => {
-                    Expr::Intermediate(lhs_value / (1 << rhs_value))
-                }
-                (Expr::RegABits(lower, upper), Expr::Intermediate(rhs_value)) => {
-                    Expr::RegABits(lower + rhs_value, upper)
-                }
-                (lhs_simpl, rhs_simpl) => Expr::Div(Box::new(lhs_simpl), Box::new(rhs_simpl)),
+        Expr::Literal(..) | Expr::RegA(..) => expr.clone(),
+        Expr::Mod8(inner) => match simplify(inner.as_ref()) {
+            Expr::Literal(inner_value) => Expr::Literal(inner_value & 7),
+            Expr::RegA(lower, upper) => Expr::RegA(lower, upper.min(lower + 3)),
+            inner_simpl => Expr::Mod8(Box::new(inner_simpl)),
+        },
+        Expr::XorLit(inner, literal) => match simplify(inner.as_ref()) {
+            Expr::Literal(inner_value) => Expr::Literal(inner_value ^ Word::from(*literal)),
+            inner_simpl => Expr::XorLit(Box::new(inner_simpl), *literal),
+        },
+        Expr::Div(lhs, rhs) => match (simplify(lhs.as_ref()), simplify(rhs.as_ref())) {
+            (Expr::Literal(lhs_value), Expr::Literal(rhs_value)) => {
+                Expr::Literal(lhs_value / (1 << rhs_value))
             }
-        }
-        Expr::Mod8(inner) => {
-            let inner_simpl = simplify(*inner);
-            match inner_simpl {
-                Expr::Intermediate(inner_value) => Expr::Intermediate(inner_value & 7),
-                Expr::RegABits(lower, upper) => Expr::RegABits(lower, upper.min(lower + 3)),
-                inner_simpl => Expr::Mod8(Box::new(inner_simpl)),
+            (Expr::RegA(lower, upper), Expr::Literal(rhs_value)) => {
+                Expr::RegA(lower + rhs_value, upper)
             }
-        }
-        Expr::Xor(lhs, rhs) => {
-            let lhs_simpl = simplify(*lhs);
-            let rhs_simpl = simplify(*rhs);
-            match (lhs_simpl, rhs_simpl) {
-                (Expr::Intermediate(lhs_value), Expr::Intermediate(rhs_value)) => {
-                    Expr::Intermediate(lhs_value ^ rhs_value)
-                }
-                (lhs_simpl, rhs_simpl) => Expr::Xor(Box::new(lhs_simpl), Box::new(rhs_simpl)),
+            (lhs_simpl, rhs_simpl) => Expr::Div(Box::new(lhs_simpl), Box::new(rhs_simpl)),
+        },
+        Expr::Xor(lhs, rhs) => match (simplify(lhs.as_ref()), simplify(rhs.as_ref())) {
+            (Expr::Literal(lhs_value), Expr::Literal(rhs_value)) => {
+                Expr::Literal(lhs_value ^ rhs_value)
             }
-        }
-        Expr::XorLit(inner, literal) => {
-            let inner_simpl = simplify(*inner);
-            match inner_simpl {
-                Expr::Intermediate(inner_value) => {
-                    Expr::Intermediate(inner_value ^ Word::from(literal))
-                }
-                inner_simpl => Expr::XorLit(Box::new(inner_simpl), literal),
-            }
-        }
-        Expr::Intermediate(_) | Expr::RegABits(_, _) => {
-            panic!("special value for intermediate calculations")
-        }
+            (lhs_simpl, rhs_simpl) => Expr::Xor(Box::new(lhs_simpl), Box::new(rhs_simpl)),
+        },
+        Expr::Uknown => panic!("malformed input"),
     }
 }
 
 fn calculate(expr: &Expr, a_value: Word) -> Word {
     match expr {
-        Expr::Div(lhs, rhs) => {
-            calculate(lhs.as_ref(), a_value) / (1 << calculate(rhs.as_ref(), a_value))
-        }
-        Expr::Mod8(inner) => calculate(inner.as_ref(), a_value) & 7,
-        Expr::Xor(lhs, rhs) => calculate(lhs.as_ref(), a_value) ^ calculate(rhs.as_ref(), a_value),
-        Expr::XorLit(inner, literal) => calculate(inner.as_ref(), a_value) ^ *literal as Word,
-        Expr::Intermediate(value) => *value,
-        Expr::RegABits(lower, upper) => {
-            if (upper - lower) == 64 {
+        Expr::Literal(value) => *value,
+        Expr::RegA(lower, upper) => {
+            if (upper - lower) == Word::BITS.into() {
                 a_value
             } else {
                 let mask = (1 << (upper - lower)) - 1;
                 (a_value >> lower) & mask
             }
         }
-        _ => panic!("must be simplified"),
+        Expr::Mod8(inner) => calculate(inner.as_ref(), a_value) & 7,
+        Expr::XorLit(inner, literal) => calculate(inner.as_ref(), a_value) ^ *literal as Word,
+        Expr::Div(lhs, rhs) => {
+            calculate(lhs.as_ref(), a_value) / (1 << calculate(rhs.as_ref(), a_value))
+        }
+        Expr::Xor(lhs, rhs) => calculate(lhs.as_ref(), a_value) ^ calculate(rhs.as_ref(), a_value),
+        Expr::Uknown => panic!("malformed input"),
     }
 }
 
@@ -286,16 +261,13 @@ fn main() {
 
     let out = machine.run1(regs);
     let ans1 = out.iter().join(",");
-    println!("ans1 = {ans1}");
 
     let state = machine.run2();
     let mut equations: Vec<(Expr, Word, Word)> = Vec::with_capacity(state.out.len());
-    for (expr, target, offset) in izip!(
-        state.out.iter().cloned(),
-        code.iter().cloned(),
-        (0..).step_by(3)
-    ) {
-        equations.push((simplify(expr), target.into(), offset));
+    for (expr, target, offset) in izip!(state.out.iter(), code.iter(), (0..).step_by(3)) {
+        let expr_simpl = simplify(expr);
+        println!("{expr_simpl:?} should be {target}");
+        equations.push((expr_simpl, (*target).into(), offset));
     }
 
     let mut a_values: Vec<Word> = vec![0];
@@ -314,5 +286,7 @@ fn main() {
     }
     let ans2 = *a_values.iter().min().unwrap();
     assert_eq!(machine.run1([ans2, 0, 0]), code);
-    println!("ans1 = {ans2}");
+
+    println!("ans1 = {ans1}");
+    println!("ans2 = {ans2}");
 }
