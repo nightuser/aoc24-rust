@@ -3,25 +3,28 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 fn dfs(line: &[u8], pos: usize, towels: &Vec<Box<[u8]>>, count: &mut Vec<i64>) {
-    if count[pos] >= 0 {
-        return;
-    }
+    assert!(pos < line.len());
     let suf = &line[pos..];
     let mut total = 0;
     let start = towels.partition_point(|towel| towel[0] < suf[0]);
     for towel in &towels[start..] {
         // Computes the length of the longest common prefix.
+        // For some reason this is faster than checking `suf[0] != towel[0]` to break from the loop
+        // and then using `suf.starts_with(towel)`.
         let common = suf
             .iter()
             .zip(towel.iter())
             .take_while(|(x, y)| *x == *y)
             .count();
+        if common == 0 {
+            break;
+        }
         if common == towel.len() {
             let new_pos = pos + towel.len();
-            dfs(line, new_pos, towels, count);
+            if count[new_pos] == -1 {
+                dfs(line, new_pos, towels, count);
+            }
             total += count[new_pos]
-        } else if common == 0 {
-            break;
         }
     }
     count[pos] = total;
