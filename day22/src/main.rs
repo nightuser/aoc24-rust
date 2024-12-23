@@ -14,24 +14,13 @@ fn next_secret_number(mut x: u64) -> u64 {
 fn main() {
     let input = env::args_os().nth(1).unwrap();
     let reader = BufReader::new(File::open(input).unwrap());
-    let mut inputs: Vec<u64> = Vec::new();
-    for line in reader.lines() {
-        let line = line.unwrap();
-        inputs.push(line.parse().unwrap());
-    }
 
     let mut ans1: u64 = 0;
-    for &(mut input) in inputs.iter() {
-        for _ in 0..2000 {
-            input = next_secret_number(input);
-        }
-        ans1 += input;
-    }
-    println!("ans1 = {ans1}");
-
-    let mut storage: Vec<i32> = vec![0; 1 << 20];
-    let mut seen: Vec<bool> = vec![false; 1 << 20];
-    for &(mut input) in inputs.iter() {
+    let mut storage: Box<[i32]> = vec![0; 1 << 20].into_boxed_slice();
+    let mut seen: Box<[bool]> = vec![false; 1 << 20].into_boxed_slice();
+    for line in reader.lines() {
+        let line = line.unwrap();
+        let mut input: u64 = line.parse().unwrap();
         seen.fill(false);
         let mut value = 0;
         let mut prev = (input % 10) as i32;
@@ -58,6 +47,7 @@ fn main() {
         }
         ans1 += input;
     }
-    let ans2 = storage.into_iter().max().unwrap();
+    let ans2 = IntoIterator::into_iter(storage).max().unwrap();
+    println!("ans1 = {ans1}");
     println!("ans2 = {ans2}");
 }
