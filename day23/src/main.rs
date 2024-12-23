@@ -8,7 +8,6 @@ use std::str;
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 
-// See https://github.com/blas-lapack-rs/accelerate-src
 extern "C" {
     fn ssymm_(
         side: *const c_char,
