@@ -1,0 +1,9 @@
+[package]
+name = "day21"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+arrayvec.workspace = true
+hashbrown.workspace = true
