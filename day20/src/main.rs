@@ -1,7 +1,9 @@
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::mem;
+use std::iter;
+
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 fn main() {
     let input = env::args_os().nth(1).unwrap();
@@ -13,8 +15,10 @@ fn main() {
     for line in reader.lines() {
         let line = line.unwrap();
         if width == 0 {
-            width = line.len();
+            width = line.len() + 2;
+            walls.extend(iter::repeat_n(true, width));
         }
+        walls.push(true);
         for c in line.into_bytes() {
             if c == b'S' {
                 start = walls.len();
@@ -23,31 +27,17 @@ fn main() {
             }
             walls.push(c == b'#');
         }
+        walls.push(true);
     }
-    let neighbors = |current: usize, shift: usize| {
-        let mut potential_neighbors: Vec<usize> = Vec::with_capacity(4);
-        let x = current % width;
-        if x >= shift {
-            potential_neighbors.push(current - shift);
-        }
-        if x < width - shift {
-            potential_neighbors.push(current + shift);
-        }
-        if current >= shift * width {
-            potential_neighbors.push(current - shift * width);
-        }
-        if current + shift * width < walls.len() {
-            potential_neighbors.push(current + shift * width);
-        }
-        potential_neighbors.into_iter()
-    };
+    walls.extend(iter::repeat_n(true, width));
+    let height = walls.len() / width;
 
     let mut path: Vec<usize> = vec![start];
     let mut current = path[0];
     let mut prev = current;
     while current != end {
-        for next in neighbors(current, 1) {
-            if walls[next] || prev == next {
+        for next in [current - width, current - 1, current + 1, current + width] {
+            if prev == next || walls[next] {
                 continue;
             }
             prev = current;
@@ -62,55 +52,35 @@ fn main() {
         dist[index] = total - i;
     }
 
-    let mut ans1 = 0;
-    for (i, &index) in path.iter().enumerate() {
-        for cheat_next in neighbors(index, 2) {
-            if dist[cheat_next] == usize::MAX {
-                continue;
-            }
-            let new_total = i + 2 + dist[cheat_next];
-            if new_total < total {
-                let saved_time = total - new_total;
-                if saved_time >= 100 {
-                    ans1 += 1;
-                }
-            }
-        }
-    }
-    println!("ans1 = {ans1}");
-
-    let mut ans2 = 0;
-    let mut current_layer: Vec<usize> = Vec::new();
-    let mut next_layer: Vec<usize> = Vec::new();
-    let mut visited = vec![false; walls.len()];
-
-    for (i, &index) in path.iter().enumerate() {
-        current_layer.clear();
-        visited.fill(false);
-        current_layer.push(index);
-        visited[index] = true;
-        for cheat_time in 1..=20 {
-            for current_cheat in current_layer.drain(..) {
-                for next_cheat in neighbors(current_cheat, 1) {
-                    if visited[next_cheat] {
+    let (ans1, ans2) = path
+        .par_iter()
+        .enumerate()
+        .map(|(i, &path_index)| {
+            let (x, y) = (path_index % width, path_index / width);
+            let mut res1 = 0;
+            let mut res2 = 0;
+            for cheat_y in y.saturating_sub(20)..=(y + 20).min(height - 1) {
+                let dy = y.abs_diff(cheat_y);
+                let leftover = 20 - dy;
+                for cheat_x in x.saturating_sub(leftover)..=(x + leftover).min(width - 1) {
+                    let cheat_index = cheat_y * width + cheat_x;
+                    if walls[cheat_index] {
                         continue;
                     }
-                    visited[next_cheat] = true;
-                    next_layer.push(next_cheat);
-                    if dist[next_cheat] != usize::MAX {
-                        let new_total = i + cheat_time + dist[next_cheat];
-                        if new_total < total {
-                            let saved_time = total - new_total;
-                            if saved_time >= 100 {
-                                ans2 += 1;
-                            }
+                    let dx = x.abs_diff(cheat_x);
+                    let cheat_time = dx + dy;
+                    let new_total = i + cheat_time + dist[cheat_index];
+                    if new_total < total && total - new_total >= 100 {
+                        if cheat_time <= 2 {
+                            res1 += 1;
                         }
+                        res2 += 1;
                     }
                 }
             }
-            mem::swap(&mut current_layer, &mut next_layer);
-        }
-    }
-
+            (res1, res2)
+        })
+        .reduce(|| (0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+    println!("ans1 = {ans1}");
     println!("ans2 = {ans2}");
 }
